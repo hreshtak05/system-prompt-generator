@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>System Prompt Generator</title>
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 1.8rem;
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+      color: #f8fafc;
+    }
+
+    .subtitle {
+      color: #94a3b8;
+      margin-bottom: 2rem;
+      font-size: 0.95rem;
+    }
+
+    .card {
+      background: #1e2130;
+      border: 1px solid #2d3148;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .card h2 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      color: #cbd5e1;
+    }
+
+    label {
+      display: block;
+      font-size: 0.875rem;
+      color: #94a3b8;
+      margin-bottom: 0.4rem;
+    }
+
+    textarea,
+    input[type="text"] {
+      width: 100%;
+      background: #0f1117;
+      border: 1px solid #2d3148;
+      border-radius: 8px;
+      color: #e2e8f0;
+      padding: 0.75rem 1rem;
+      font-size: 0.9rem;
+      font-family: inherit;
+      resize: vertical;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    textarea:focus,
+    input[type="text"]:focus {
+      border-color: #6366f1;
+    }
+
+    #description {
+      min-height: 120px;
+    }
+
+    .custom-case {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+      padding: 0.75rem;
+      background: #0f1117;
+      border-radius: 8px;
+      border: 1px solid #2d3148;
+    }
+
+    .custom-case-header {
+      grid-column: 1 / -1;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.8rem;
+      color: #64748b;
+      margin-bottom: 0.25rem;
+    }
+
+    .remove-btn {
+      background: none;
+      border: none;
+      color: #ef4444;
+      cursor: pointer;
+      font-size: 0.8rem;
+      padding: 0;
+    }
+
+    .remove-btn:hover {
+      color: #fca5a5;
+    }
+
+    .add-case-btn {
+      background: none;
+      border: 1px dashed #4f5a7a;
+      border-radius: 8px;
+      color: #6366f1;
+      cursor: pointer;
+      font-size: 0.875rem;
+      padding: 0.6rem 1rem;
+      width: 100%;
+      margin-top: 0.25rem;
+      transition: all 0.2s;
+    }
+
+    .add-case-btn:hover {
+      border-color: #6366f1;
+      background: #1a1d2e;
+    }
+
+    .generate-btn {
+      background: #6366f1;
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      cursor: pointer;
+      font-size: 1rem;
+      font-weight: 600;
+      padding: 0.85rem 2rem;
+      width: 100%;
+      transition: background 0.2s;
+    }
+
+    .generate-btn:hover:not(:disabled) {
+      background: #4f46e5;
+    }
+
+    .generate-btn:disabled {
+      background: #374151;
+      color: #6b7280;
+      cursor: not-allowed;
+    }
+
+    /* Progress panel */
+    #progress-panel {
+      display: none;
+    }
+
+    .iteration-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.75rem;
+    }
+
+    .iteration-label {
+      font-size: 0.9rem;
+      color: #94a3b8;
+    }
+
+    .pass-rate-badge {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #a5b4fc;
+    }
+
+    .progress-bar-track {
+      background: #0f1117;
+      border-radius: 999px;
+      height: 10px;
+      overflow: hidden;
+      margin-bottom: 1.25rem;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #6366f1, #8b5cf6);
+      transition: width 0.5s ease;
+      width: 0%;
+    }
+
+    /* Results table */
+    .results-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+
+    .results-table th {
+      text-align: left;
+      color: #64748b;
+      font-weight: 600;
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid #2d3148;
+    }
+
+    .results-table td {
+      padding: 0.6rem 0.75rem;
+      border-bottom: 1px solid #1a1d2e;
+      vertical-align: top;
+    }
+
+    .results-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .status-icon {
+      font-size: 1rem;
+    }
+
+    .reason-text {
+      color: #64748b;
+      font-size: 0.8rem;
+      margin-top: 0.2rem;
+    }
+
+    .category-badge {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.25rem;
+    }
+
+    .cat-normal {
+      background: #1e3a5f;
+      color: #60a5fa;
+    }
+
+    .cat-edge {
+      background: #2d2a00;
+      color: #facc15;
+    }
+
+    .cat-adversarial {
+      background: #3b0f0f;
+      color: #f87171;
+    }
+
+    .cat-refusal {
+      background: #1a0f2e;
+      color: #c084fc;
+    }
+
+    .cat-custom {
+      background: #0f2e1a;
+      color: #4ade80;
+    }
+
+    .score-pill {
+      display: inline-block;
+      font-size: 0.78rem;
+      font-weight: 700;
+      padding: 0.15rem 0.5rem;
+      border-radius: 6px;
+      min-width: 2.5rem;
+      text-align: center;
+    }
+
+    .score-high {
+      background: #052e16;
+      color: #4ade80;
+    }
+
+    .score-mid {
+      background: #1c1107;
+      color: #fbbf24;
+    }
+
+    .score-low {
+      background: #1f0707;
+      color: #f87171;
+    }
+
+    .score-breakdown {
+      font-size: 0.75rem;
+      color: #475569;
+      margin-top: 0.25rem;
+    }
+
+    /* Final result */
+    #result-panel {
+      display: none;
+    }
+
+    .result-banner {
+      border-radius: 8px;
+      padding: 0.85rem 1.25rem;
+      margin-bottom: 1.25rem;
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+
+    .banner-success {
+      background: #052e16;
+      border: 1px solid #16a34a;
+      color: #4ade80;
+    }
+
+    .banner-warning {
+      background: #1c1107;
+      border: 1px solid #d97706;
+      color: #fbbf24;
+    }
+
+    #final-prompt {
+      min-height: 200px;
+      font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+      font-size: 0.85rem;
+      line-height: 1.6;
+    }
+
+    .copy-btn {
+      background: #1e2130;
+      border: 1px solid #2d3148;
+      border-radius: 8px;
+      color: #a5b4fc;
+      cursor: pointer;
+      font-size: 0.875rem;
+      padding: 0.5rem 1.25rem;
+      margin-top: 0.75rem;
+      transition: all 0.2s;
+    }
+
+    .copy-btn:hover {
+      background: #2d3148;
+      border-color: #6366f1;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid #6366f1;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin-right: 0.5rem;
+      vertical-align: middle;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .section-divider {
+      border: none;
+      border-top: 1px solid #2d3148;
+      margin: 1.25rem 0;
+    }
+
+    /* Mode toggle */
+    .mode-toggle {
+      display: flex;
+      background: #0f1117;
+      border: 1px solid #2d3148;
+      border-radius: 8px;
+      padding: 4px;
+      margin-bottom: 1.25rem;
+      gap: 4px;
+    }
+
+    .mode-btn {
+      flex: 1;
+      background: none;
+      border: none;
+      border-radius: 6px;
+      color: #64748b;
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 500;
+      padding: 0.5rem 1rem;
+      transition: all 0.2s;
+    }
+
+    .mode-btn.active {
+      background: #6366f1;
+      color: #fff;
+    }
+
+    #existing-prompt-section {
+      display: none;
+    }
+
+    #existing-prompt {
+      min-height: 160px;
+      font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+      font-size: 0.85rem;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h1>System Prompt Generator</h1>
+    <p class="subtitle">Describe what you want your AI to do — it will write, test, and refine a system prompt
+      automatically.</p>
+
+    <!-- Section 1: Input Form -->
+    <div class="card" id="input-section">
+
+      <!-- Mode toggle -->
+      <div class="mode-toggle">
+        <button class="mode-btn active" id="mode-generate" onclick="setMode('generate')">✨ Generate new prompt</button>
+        <button class="mode-btn" id="mode-improve" onclick="setMode('improve')">🔧 Improve existing prompt</button>
+      </div>
+
+      <h2>What should your AI assistant do?</h2>
+      <label for="description">Describe your AI assistant</label>
+      <textarea id="description"
+        placeholder="Example: I want an AI assistant that helps online store customers track their orders. It should be friendly, answer in short paragraphs, and never discuss competitor brands."></textarea>
+
+      <!-- Existing prompt section (shown in improve mode) -->
+      <div id="existing-prompt-section">
+        <hr class="section-divider" />
+        <h2>Your existing system prompt</h2>
+        <label for="existing-prompt">Paste your current system prompt here</label>
+        <textarea id="existing-prompt"
+          placeholder="Paste your existing system prompt here — the AI will evaluate it and improve it until it scores 90%+…"></textarea>
+      </div>
+
+      <hr class="section-divider" />
+
+      <h2>Custom test cases <span style="font-weight:400;color:#64748b;font-size:0.85rem;">(optional)</span></h2>
+      <div id="custom-cases-container"></div>
+      <button class="add-case-btn" onclick="addCustomCase()">+ Add a test case</button>
+
+      <hr class="section-divider" />
+
+      <button class="generate-btn" id="generate-btn" onclick="startGeneration()">✨ Generate System Prompt</button>
+    </div>
+
+    <!-- Section 2: Live Progress -->
+    <div class="card" id="progress-panel">
+      <div class="iteration-header">
+        <span class="iteration-label" id="iteration-label"><span class="spinner"></span>Starting…</span>
+        <span class="pass-rate-badge" id="pass-rate-badge">0%</span>
+      </div>
+      <div class="progress-bar-track">
+        <div class="progress-bar-fill" id="progress-bar"></div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="results-table">
+          <thead>
+            <tr>
+              <th style="width:2rem;"></th>
+              <th style="width:4rem;">Score</th>
+              <th>Test input</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody id="results-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Section 3: Final Result -->
+    <div class="card" id="result-panel">
+      <div id="result-banner" class="result-banner"></div>
+      <label for="final-prompt">Final system prompt</label>
+      <textarea id="final-prompt" readonly></textarea>
+      <button class="copy-btn" onclick="copyPrompt()">Copy to clipboard</button>
+    </div>
+  </div>
+
+  <script>
+    let customCaseCount = 0;
+    let currentMode = 'generate';
+
+    function setMode(mode) {
+      currentMode = mode;
+      document.getElementById('mode-generate').classList.toggle('active', mode === 'generate');
+      document.getElementById('mode-improve').classList.toggle('active', mode === 'improve');
+      document.getElementById('existing-prompt-section').style.display = mode === 'improve' ? 'block' : 'none';
+      document.getElementById('generate-btn').textContent = mode === 'improve' ? '🔧 Improve System Prompt' : '✨ Generate System Prompt';
+    }
+
+    function addCustomCase() {
+      customCaseCount++;
+      const id = customCaseCount;
+      const container = document.getElementById('custom-cases-container');
+      const div = document.createElement('div');
+      div.className = 'custom-case';
+      div.id = `case-${id}`;
+      div.innerHTML = `
+        <div class="custom-case-header">
+          <span>Test case #${id}</span>
+          <button class="remove-btn" onclick="removeCase(${id})">Remove</button>
+        </div>
+        <div>
+          <label>Sample input</label>
+          <input type="text" id="case-input-${id}" placeholder="What a user might say…" />
+        </div>
+        <div>
+          <label>What a good answer looks like</label>
+          <input type="text" id="case-criteria-${id}" placeholder="Should be friendly and mention…" />
+        </div>
+      `;
+      container.appendChild(div);
+    }
+
+    function removeCase(id) {
+      const el = document.getElementById(`case-${id}`);
+      if (el) el.remove();
+    }
+
+    function getCustomCases() {
+      const cases = [];
+      document.querySelectorAll('.custom-case').forEach(el => {
+        const idMatch = el.id.match(/case-(\d+)/);
+        if (!idMatch) return;
+        const n = idMatch[1];
+        const input = document.getElementById(`case-input-${n}`)?.value.trim();
+        const criteria = document.getElementById(`case-criteria-${n}`)?.value.trim();
+        if (input && criteria) cases.push({ input, criteria });
+      });
+      return cases;
+    }
+
+    async function startGeneration() {
+      const description = document.getElementById('description').value.trim();
+      if (!description) {
+        alert('Please describe what you want your AI assistant to do.');
+        return;
+      }
+
+      const custom_cases = getCustomCases();
+      const existing_prompt = document.getElementById('existing-prompt').value.trim();
+
+      // Validate: if improve mode, existing prompt must be filled
+      if (currentMode === 'improve' && !existing_prompt) {
+        alert('Please paste your existing system prompt.');
+        return;
+      }
+
+      // Disable button, show progress panel, hide result panel
+      document.getElementById('generate-btn').disabled = true;
+      document.getElementById('progress-panel').style.display = 'block';
+      document.getElementById('result-panel').style.display = 'none';
+      document.getElementById('results-body').innerHTML = '';
+      const startMsg = currentMode === 'improve'
+        ? '<span class="spinner"></span>Evaluating your prompt and generating test cases…'
+        : '<span class="spinner"></span>Generating test cases and initial prompt…';
+      document.getElementById('iteration-label').innerHTML = startMsg;
+      document.getElementById('pass-rate-badge').textContent = '0%';
+      document.getElementById('progress-bar').style.width = '0%';
+
+      const payload = { description, custom_cases, existing_prompt: currentMode === 'improve' ? existing_prompt : '' };
+
+      try {
+        const response = await fetch('/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const lines = buffer.split('\n');
+          buffer = lines.pop(); // keep incomplete last line
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                handleUpdate(data);
+              } catch (e) {
+                // skip malformed lines
+              }
+            }
+          }
+        }
+      } catch (err) {
+        document.getElementById('iteration-label').textContent = 'Error: ' + err.message;
+      }
+
+      document.getElementById('generate-btn').disabled = false;
+    }
+
+    function handleUpdate(data) {
+      if (data.type === 'iteration') {
+        updateProgress(data);
+      } else if (data.type === 'done') {
+        showFinalResult(data);
+      }
+    }
+
+    function updateProgress(data) {
+      const pct = Math.round(data.pass_rate * 100);
+      const maxIter = data.max_iterations || 20;
+      document.getElementById('iteration-label').innerHTML =
+        `<span class="spinner"></span>Testing — Round ${data.iteration} of ${maxIter}`;
+      document.getElementById('pass-rate-badge').textContent = `${pct}% passing`;
+      document.getElementById('progress-bar').style.width = `${pct}%`;
+
+      const tbody = document.getElementById('results-body');
+      tbody.innerHTML = '';
+      for (const r of data.results) {
+        const score = r.score ?? null;
+        const scoreClass = score === null ? '' : score >= 7 ? 'score-high' : score >= 5 ? 'score-mid' : 'score-low';
+        const scoreHtml = score !== null
+          ? `<span class="score-pill ${scoreClass}">${score}/10</span>`
+          : '—';
+
+        const cat = r.category || 'normal';
+        const catHtml = `<span class="category-badge cat-${cat}">${cat}</span>`;
+
+        const breakdown = r.scores
+          ? `<div class="score-breakdown">instr: ${r.scores.instruction_following} · criteria: ${r.scores.criteria_met} · quality: ${r.scores.quality}</div>`
+          : '';
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="status-icon">${r.passed ? '✅' : '❌'}</td>
+          <td>${scoreHtml}${breakdown}</td>
+          <td>
+            ${catHtml}
+            <div>${escapeHtml(r.input)}</div>
+          </td>
+          <td><span class="reason-text">${escapeHtml(r.reason)}</span></td>
+        `;
+        tbody.appendChild(tr);
+      }
+    }
+
+    function showFinalResult(data) {
+      const pct = Math.round(data.pass_rate * 100);
+
+      const statusLabels = {
+        success: `Done — scored ${pct}%`,
+        stuck: `Stopped — no improvement for 3 rounds — best score ${pct}%`,
+        max_iterations: `Finished after 20 attempts — best score ${pct}%`
+      };
+      document.getElementById('iteration-label').textContent = statusLabels[data.status] || `Done — ${pct}%`;
+      document.getElementById('progress-bar').style.width = `${pct}%`;
+
+      const banner = document.getElementById('result-banner');
+      if (data.status === 'success') {
+        banner.className = 'result-banner banner-success';
+        banner.textContent = `✅ System prompt ready — scored ${pct}%`;
+      } else if (data.status === 'stuck') {
+        banner.className = 'result-banner banner-warning';
+        banner.textContent = `⚠️ Stopped improving — best result scored ${pct}% (try rephrasing your description for better results)`;
+      } else {
+        banner.className = 'result-banner banner-warning';
+        banner.textContent = `⚠️ Best result after 50 attempts — scored ${pct}%`;
+      }
+
+      document.getElementById('final-prompt').value = data.prompt;
+      document.getElementById('result-panel').style.display = 'block';
+    }
+
+    function copyPrompt() {
+      const ta = document.getElementById('final-prompt');
+      ta.select();
+      ta.setSelectionRange(0, 99999);
+      navigator.clipboard.writeText(ta.value).then(() => {
+        const btn = document.querySelector('.copy-btn');
+        const orig = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(() => btn.textContent = orig, 2000);
+      });
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+  </script>
+</body>
+
+</html>
