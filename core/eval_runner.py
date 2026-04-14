@@ -9,7 +9,7 @@ load_dotenv()
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 PASS_SCORE = 7        # Score out of 10 required to pass
-MAX_CONCURRENT = 5    # Max parallel API calls (respects rate limits)
+MAX_CONCURRENT = 15   # Max parallel API calls (respects rate limits)
 
 
 def parse_json_from_response(text: str):
@@ -36,7 +36,7 @@ async def evaluate_single_case(case: dict, system_prompt: str, semaphore: asynci
             response_text = f"[ERROR: {str(e)}]"
 
         # Step B — judge the response with a stronger model
-        judge_model = genai.GenerativeModel("gemini-2.5-pro")
+        judge_model = genai.GenerativeModel("gemini-2.5-flash")
 
         category_note = ""
         if category == "adversarial":
