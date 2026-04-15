@@ -9,7 +9,8 @@ load_dotenv()
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 PASS_SCORE = 7        # Score out of 10 required to pass
-MAX_CONCURRENT = 15   # Max parallel API calls (respects rate limits)
+MAX_CONCURRENT = 10   # Max parallel API calls — reduced to handle multiple users
+MAX_RETRIES = 3       # Retry on rate limit errors
 
 
 def parse_json_from_response(text: str):
@@ -17,6 +18,21 @@ def parse_json_from_response(text: str):
     text = re.sub(r'```\n?', '', text)
     text = text.strip()
     return json.loads(text)
+
+
+async def call_with_retry(coroutine_fn, *args, **kwargs):
+    """Call an async Gemini function with automatic retry on rate limit errors."""
+    for attempt in range(MAX_RETRIES):
+        try:
+            return await coroutine_fn(*args, **kwargs)
+        except Exception as e:
+            error_str = str(e).lower()
+            is_rate_limit = "429" in error_str or "quota" in error_str or "resource_exhausted" in error_str
+            if is_rate_limit and attempt < MAX_RETRIES - 1:
+                wait_time = 2 ** attempt * 3  # 3s, 6s, 12s
+                await asyncio.sleep(wait_time)
+            else:
+                raise
 
 
 async def evaluate_single_case(case: dict, system_prompt: str, semaphore: asyncio.Semaphore) -> dict:
@@ -30,7 +46,9 @@ async def evaluate_single_case(case: dict, system_prompt: str, semaphore: asynci
             system_instruction=system_prompt
         )
         try:
-            test_response = await test_model.generate_content_async(case["input"])
+            test_response = await call_with_retry(
+                test_model.generate_content_async, case["input"]
+            )
             response_text = test_response.text.strip()
         except Exception as e:
             response_text = f"[ERROR: {str(e)}]"
@@ -95,7 +113,9 @@ Return ONLY this JSON. No extra text:
 }}"""
 
         try:
-            judge_response = await judge_model.generate_content_async(judge_prompt)
+            judge_response = await call_with_retry(
+                judge_model.generate_content_async, judge_prompt
+            )
             judgment = parse_json_from_response(judge_response.text)
         except (json.JSONDecodeError, Exception):
             judgment = {
