@@ -8,15 +8,15 @@ PASS_THRESHOLD = 0.99
 NO_IMPROVEMENT_LIMIT = 7
 
 
-async def run_loop(user_description: str, custom_cases: list = None, existing_prompt: str = None):
+async def run_loop(user_description: str, custom_cases: list = None, existing_prompt: str = None, context_files: list = None):
     # Step 1: Generate eval test cases once — reused every iteration
-    eval_cases = generate_eval_cases(user_description, custom_cases)
+    eval_cases = generate_eval_cases(user_description, custom_cases, context_files)
 
     # Step 2: Use existing prompt if provided, otherwise generate a new one
     if existing_prompt and existing_prompt.strip():
         current_prompt = existing_prompt.strip()
     else:
-        current_prompt = generate_prompt(user_description)
+        current_prompt = generate_prompt(user_description, context_files)
 
     best_prompt = current_prompt
     best_pass_rate = 0.0

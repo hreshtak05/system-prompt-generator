@@ -6,12 +6,25 @@ load_dotenv()
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 
-def generate_prompt(user_description: str) -> str:
+def build_context_section(context_files: list, max_chars: int = 2000) -> str:
+    if not context_files:
+        return ""
+    section = "\n\nCONTEXT FILES (the AI will work with these types of files — factor them into the prompt):\n"
+    for f in context_files:
+        section += f"\n--- {f.get('filename', 'file')} ({f.get('type', 'text')}) ---\n"
+        section += f.get("content", "")[:max_chars]
+        section += "\n"
+    return section
+
+
+def generate_prompt(user_description: str, context_files: list = None) -> str:
     model = genai.GenerativeModel("gemini-2.5-pro")
+    context_section = build_context_section(context_files)
+
     prompt = f"""You are a world-class AI prompt engineer. Your system prompts are used in production AI assistants that serve thousands of users.
 
 The user wants to build an AI assistant that does this:
-{user_description}
+{user_description}{context_section}
 
 Before writing the system prompt, think through these questions:
 1. What is the core job this AI needs to do?
@@ -44,6 +57,8 @@ EDGE CASES
 - Handles ambiguous or unclear requests
 - Covers what to do when it doesn't know something
 - Addresses escalation paths if relevant
+
+If context files were provided above, make sure the prompt explicitly instructs the AI on how to handle those file types.
 
 Return only the final system prompt text. No explanations, no headers, no meta-commentary."""
 

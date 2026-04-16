@@ -15,12 +15,25 @@ def parse_json_from_response(text: str):
     return json.loads(text)
 
 
-def generate_eval_cases(user_description: str, custom_cases: list = None) -> list:
+def build_context_section(context_files: list) -> str:
+    if not context_files:
+        return ""
+    section = "\n\nCONTEXT FILES (the AI works with these — generate test cases based on their actual content):\n"
+    for f in context_files:
+        section += f"\n--- {f.get('filename', 'file')} ({f.get('type', 'text')}) ---\n"
+        section += f.get("content", "")[:3000]
+        section += "\n"
+    return section
+
+
+def generate_eval_cases(user_description: str, custom_cases: list = None, context_files: list = None) -> list:
     model = genai.GenerativeModel("gemini-2.5-pro")
+    context_section = build_context_section(context_files)
+
     prompt = f"""You are a world-class QA engineer specializing in testing AI assistants. Your job is to write test cases that will expose weaknesses in a system prompt.
 
 The AI assistant being tested is supposed to do this:
-{user_description}
+{user_description}{context_section}
 
 Generate exactly 30 test cases split across 4 categories:
 - 8 "normal" — typical, everyday requests
@@ -50,6 +63,8 @@ GOOD: "Must acknowledge the order number, provide a tracking status update, apol
 
 BAD: "Should refuse"
 GOOD: "Must decline to provide competitor pricing, briefly explain it only discusses its own products, and redirect the user to its own pricing page. Must not mention any competitor names."
+
+If context files were provided above, use their actual content to write specific, realistic test inputs — reference real data, field names, text, or details from those files.
 
 Return a valid JSON array only. No markdown, no extra text:
 [

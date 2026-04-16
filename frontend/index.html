@@ -375,6 +375,84 @@
       margin: 1.25rem 0;
     }
 
+    /* File upload */
+    .upload-btn {
+      background: none;
+      border: 1px solid #2d3148;
+      border-radius: 6px;
+      color: #94a3b8;
+      cursor: pointer;
+      font-size: 0.8rem;
+      padding: 0.3rem 0.75rem;
+      transition: all 0.2s;
+      margin-bottom: 0.5rem;
+    }
+
+    .upload-btn:hover { border-color: #6366f1; color: #a5b4fc; }
+
+    .drop-zone {
+      border: 2px dashed #2d3148;
+      border-radius: 8px;
+      padding: 1.25rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: #0f1117;
+    }
+
+    .drop-zone:hover, .drop-zone.drag-over {
+      border-color: #6366f1;
+      background: #13152a;
+    }
+
+    .drop-zone p { color: #64748b; font-size: 0.85rem; margin: 0; }
+    .drop-zone .hint { font-size: 0.75rem; color: #475569; margin-top: 0.25rem; }
+
+    .file-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+    }
+
+    .file-chip {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: #1a1d2e;
+      border: 1px solid #2d3148;
+      border-radius: 6px;
+      padding: 0.3rem 0.6rem;
+      font-size: 0.8rem;
+      color: #94a3b8;
+    }
+
+    .file-chip.loading { border-color: #6366f1; color: #a5b4fc; }
+    .file-chip.error { border-color: #ef4444; color: #f87171; }
+    .file-chip.ready { border-color: #16a34a; color: #4ade80; }
+
+    .file-chip-remove {
+      background: none;
+      border: none;
+      color: #64748b;
+      cursor: pointer;
+      font-size: 0.9rem;
+      padding: 0;
+      line-height: 1;
+    }
+
+    .file-chip-remove:hover { color: #ef4444; }
+
+    .file-chip-spinner {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border: 1.5px solid #6366f1;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
     /* Mode toggle */
     .mode-toggle {
       display: flex;
@@ -441,10 +519,30 @@
       <div id="existing-prompt-section">
         <hr class="section-divider" />
         <h2>Your existing system prompt</h2>
-        <label for="existing-prompt">Paste your current system prompt here</label>
+        <button class="upload-btn" onclick="document.getElementById('prompt-file-input').click()">📎 Upload from file (.txt, .md, .pdf)</button>
+        <input type="file" id="prompt-file-input" accept=".txt,.md,.pdf" style="display:none" onchange="handlePromptFileUpload(this.files[0])" />
+        <label for="existing-prompt">Or paste your current system prompt here</label>
         <textarea id="existing-prompt"
-          placeholder="Paste your existing system prompt here — the AI will evaluate it and improve it until it scores 90%+…"></textarea>
+          placeholder="Paste your existing system prompt here — the AI will evaluate it and improve it until it scores 99%+…"></textarea>
       </div>
+
+      <hr class="section-divider" />
+
+      <!-- Context files upload -->
+      <h2>Context files <span style="font-weight:400;color:#64748b;font-size:0.85rem;">(optional)</span></h2>
+      <p style="font-size:0.82rem;color:#64748b;margin-bottom:0.75rem;">Upload files your AI works with — PDFs, images, CSVs, code, etc. Test cases will be generated based on their actual content.</p>
+      <div class="drop-zone" id="context-drop-zone"
+        onclick="document.getElementById('context-file-input').click()"
+        ondragover="handleDragOver(event)"
+        ondragleave="handleDragLeave(event)"
+        ondrop="handleDrop(event)">
+        <p>📁 Drag & drop files here or <strong style="color:#a5b4fc">click to upload</strong></p>
+        <p class="hint">PDF, images (PNG/JPG/WebP), text, CSV, JSON, code files — max 20MB each</p>
+      </div>
+      <input type="file" id="context-file-input" multiple
+        accept=".txt,.md,.pdf,.png,.jpg,.jpeg,.gif,.webp,.csv,.json,.py,.js,.ts,.html,.css,.xml,.yaml,.yml,.docx"
+        style="display:none" onchange="handleContextFiles(this.files)" />
+      <div class="file-chips" id="context-file-chips"></div>
 
       <hr class="section-divider" />
 
@@ -493,6 +591,113 @@
   <script>
     let customCaseCount = 0;
     let currentMode = 'generate';
+    let contextFiles = []; // [{filename, content, type}]
+
+    // ─── Prompt file upload ───────────────────────────────────────────
+    async function handlePromptFileUpload(file) {
+      if (!file) return;
+      const ext = file.name.split('.').pop().toLowerCase();
+
+      // Text/markdown: read client-side
+      if (ext === 'txt' || ext === 'md') {
+        const text = await file.text();
+        document.getElementById('existing-prompt').value = text;
+        return;
+      }
+
+      // PDF or other: send to /upload endpoint
+      const btn = document.querySelector('.upload-btn');
+      const orig = btn.textContent;
+      btn.textContent = '⏳ Processing…';
+      btn.disabled = true;
+
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetch('/upload', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (data.error) {
+          alert('Upload failed: ' + data.error);
+        } else {
+          document.getElementById('existing-prompt').value = data.content;
+        }
+      } catch (e) {
+        alert('Upload failed: ' + e.message);
+      } finally {
+        btn.textContent = orig;
+        btn.disabled = false;
+        document.getElementById('prompt-file-input').value = '';
+      }
+    }
+
+    // ─── Context file upload ──────────────────────────────────────────
+    function handleDragOver(e) {
+      e.preventDefault();
+      document.getElementById('context-drop-zone').classList.add('drag-over');
+    }
+
+    function handleDragLeave(e) {
+      document.getElementById('context-drop-zone').classList.remove('drag-over');
+    }
+
+    function handleDrop(e) {
+      e.preventDefault();
+      document.getElementById('context-drop-zone').classList.remove('drag-over');
+      handleContextFiles(e.dataTransfer.files);
+    }
+
+    async function handleContextFiles(files) {
+      for (const file of Array.from(files)) {
+        await uploadContextFile(file);
+      }
+      document.getElementById('context-file-input').value = '';
+    }
+
+    async function uploadContextFile(file) {
+      const id = Date.now() + Math.random();
+      addFileChip(id, file.name, 'loading');
+
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetch('/upload', { method: 'POST', body: formData });
+        const data = await res.json();
+
+        if (data.error) {
+          updateFileChip(id, file.name, 'error', data.error);
+        } else {
+          contextFiles.push({ id, filename: data.filename, content: data.content, type: data.type });
+          updateFileChip(id, file.name, 'ready');
+        }
+      } catch (e) {
+        updateFileChip(id, file.name, 'error', e.message);
+      }
+    }
+
+    function addFileChip(id, name, state) {
+      const chips = document.getElementById('context-file-chips');
+      const chip = document.createElement('div');
+      chip.className = `file-chip ${state}`;
+      chip.id = `chip-${id}`;
+      const icon = state === 'loading' ? '<span class="file-chip-spinner"></span>' : state === 'error' ? '❌' : '✅';
+      chip.innerHTML = `${icon} <span>${escapeHtml(name)}</span> <button class="file-chip-remove" onclick="removeContextFile('${id}')">×</button>`;
+      chips.appendChild(chip);
+    }
+
+    function updateFileChip(id, name, state, errorMsg) {
+      const chip = document.getElementById(`chip-${id}`);
+      if (!chip) return;
+      chip.className = `file-chip ${state}`;
+      const icon = state === 'error' ? '❌' : '✅';
+      const label = state === 'error' ? `${name} — ${errorMsg}` : name;
+      chip.innerHTML = `${icon} <span>${escapeHtml(label)}</span> <button class="file-chip-remove" onclick="removeContextFile('${id}')">×</button>`;
+    }
+
+    function removeContextFile(id) {
+      contextFiles = contextFiles.filter(f => String(f.id) !== String(id));
+      const chip = document.getElementById(`chip-${id}`);
+      if (chip) chip.remove();
+    }
 
     function setMode(mode) {
       currentMode = mode;
@@ -572,7 +777,12 @@
       document.getElementById('pass-rate-badge').textContent = '0%';
       document.getElementById('progress-bar').style.width = '0%';
 
-      const payload = { description, custom_cases, existing_prompt: currentMode === 'improve' ? existing_prompt : '' };
+      const payload = {
+        description,
+        custom_cases,
+        existing_prompt: currentMode === 'improve' ? existing_prompt : '',
+        context_files: contextFiles.filter(f => f.content).map(f => ({ filename: f.filename, content: f.content, type: f.type }))
+      };
 
       try {
         const response = await fetch('/generate', {
