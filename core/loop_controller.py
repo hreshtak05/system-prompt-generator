@@ -6,6 +6,7 @@ from core.eval_runner import run_evals
 MAX_ITERATIONS = 50
 PASS_THRESHOLD = 0.95
 NO_IMPROVEMENT_LIMIT = 7
+MAX_FRESH_STARTS = 2  # How many times to regenerate from scratch when stuck
 
 
 async def run_loop(user_description: str, custom_cases: list = None, existing_prompt: str = None, context_files: list = None):
@@ -21,6 +22,7 @@ async def run_loop(user_description: str, custom_cases: list = None, existing_pr
     best_prompt = current_prompt
     best_pass_rate = 0.0
     no_improvement_count = 0
+    fresh_starts = 0
 
     # Track which tests have persistently failed across iterations
     persistent_failures = {}  # input -> fail count
@@ -64,15 +66,26 @@ async def run_loop(user_description: str, custom_cases: list = None, existing_pr
             }
             return
 
-        # Step 3d: Early stop — genuinely stuck
+        # Step 3d: Stuck — try regenerating from scratch before giving up
         if no_improvement_count >= NO_IMPROVEMENT_LIMIT:
-            yield {
-                "type": "done",
-                "status": "stuck",
-                "prompt": best_prompt,
-                "pass_rate": best_pass_rate
-            }
-            return
+            if fresh_starts < MAX_FRESH_STARTS:
+                fresh_starts += 1
+                no_improvement_count = 0
+                persistent_failures = {}
+                yield {
+                    "type": "status",
+                    "message": f"Stuck at {int(best_pass_rate * 100)}% — regenerating prompt from scratch (attempt {fresh_starts}/{MAX_FRESH_STARTS})"
+                }
+                current_prompt = generate_prompt(user_description, context_files)
+                continue
+            else:
+                yield {
+                    "type": "done",
+                    "status": "stuck",
+                    "prompt": best_prompt,
+                    "pass_rate": best_pass_rate
+                }
+                return
 
         # Step 3e: Build rich failure report for the refiner
         failed_results = [r for r in eval_results["results"] if not r["passed"]]

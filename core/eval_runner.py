@@ -143,10 +143,30 @@ Return ONLY this JSON. No extra text:
         }
 
 
+async def evaluate_with_timeout(case: dict, system_prompt: str, semaphore: asyncio.Semaphore) -> dict:
+    """Wrap evaluate_single_case with a hard 90-second timeout."""
+    try:
+        return await asyncio.wait_for(
+            evaluate_single_case(case, system_prompt, semaphore),
+            timeout=90.0
+        )
+    except asyncio.TimeoutError:
+        return {
+            "input": case["input"],
+            "criteria": case["criteria"],
+            "category": case.get("category", "normal"),
+            "response": "[TIMEOUT]",
+            "passed": False,
+            "score": 0,
+            "scores": {"instruction_following": 0, "criteria_met": 0, "quality": 0},
+            "reason": "Eval timed out after 90 seconds — API may be overloaded"
+        }
+
+
 async def run_evals(system_prompt: str, eval_cases: list) -> dict:
     """Run all eval cases in parallel, limited by MAX_CONCURRENT."""
     semaphore = asyncio.Semaphore(MAX_CONCURRENT)
-    tasks = [evaluate_single_case(case, system_prompt, semaphore) for case in eval_cases]
+    tasks = [evaluate_with_timeout(case, system_prompt, semaphore) for case in eval_cases]
     results = await asyncio.gather(*tasks)
 
     passed = sum(1 for r in results if r["passed"])
