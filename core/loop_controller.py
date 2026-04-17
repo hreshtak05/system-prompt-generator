@@ -4,7 +4,7 @@ from core.eval_generator import generate_eval_cases
 from core.eval_runner import run_evals
 
 MAX_ITERATIONS = 50
-PASS_THRESHOLD = 0.99
+PASS_THRESHOLD = 1.0
 NO_IMPROVEMENT_LIMIT = 7
 
 
