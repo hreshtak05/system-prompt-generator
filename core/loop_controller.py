@@ -1,39 +1,49 @@
 import asyncio
-from core.prompt_generator import generate_prompt, refine_prompt
-from core.eval_generator import generate_eval_cases
+from core.prompt_generator import generate_prompt_async, refine_prompt_async
+from core.eval_generator import generate_eval_cases_async
 from core.eval_runner import run_evals
 
 MAX_ITERATIONS = 50
 PASS_THRESHOLD = 0.95
 NO_IMPROVEMENT_LIMIT = 7
-MAX_FRESH_STARTS = 2  # How many times to regenerate from scratch when stuck
+MAX_FRESH_STARTS = 2
 
 
 async def run_loop(user_description: str, custom_cases: list = None, existing_prompt: str = None, context_files: list = None):
-    # Step 1: Generate eval test cases once — reused every iteration
-    eval_cases = generate_eval_cases(user_description, custom_cases, context_files)
 
-    # Step 2: Use existing prompt if provided, otherwise generate a new one
+    # Step 1 — Tell user we're starting
+    yield {"type": "status", "message": "Analyzing your description and preparing..."}
+
+    # Step 2 — Run eval generation and prompt generation IN PARALLEL
+    # (saves ~15s vs running them sequentially)
     if existing_prompt and existing_prompt.strip():
+        # Existing prompt provided — only need to generate eval cases
+        yield {"type": "status", "message": "Generating 30 test cases..."}
+        eval_cases = await generate_eval_cases_async(user_description, custom_cases, context_files)
         current_prompt = existing_prompt.strip()
     else:
-        current_prompt = generate_prompt(user_description, context_files)
+        # Need both — run them at the same time
+        yield {"type": "status", "message": "Generating test cases and system prompt in parallel..."}
+        eval_cases, current_prompt = await asyncio.gather(
+            generate_eval_cases_async(user_description, custom_cases, context_files),
+            generate_prompt_async(user_description, context_files)
+        )
+
+    yield {"type": "status", "message": "Ready — running first evaluation round..."}
 
     best_prompt = current_prompt
     best_pass_rate = 0.0
     no_improvement_count = 0
     fresh_starts = 0
-
-    # Track which tests have persistently failed across iterations
-    persistent_failures = {}  # input -> fail count
+    persistent_failures = {}
 
     for iteration in range(1, MAX_ITERATIONS + 1):
 
-        # Step 3a: Run all evals in parallel
+        # Run all evals in parallel
         eval_results = await run_evals(current_prompt, eval_cases)
         pass_rate = eval_results["pass_rate"]
 
-        # Track best prompt and improvement streak
+        # Track best prompt
         if pass_rate > best_pass_rate:
             best_pass_rate = pass_rate
             best_prompt = current_prompt
@@ -47,7 +57,7 @@ async def run_loop(user_description: str, custom_cases: list = None, existing_pr
                 key = result["input"]
                 persistent_failures[key] = persistent_failures.get(key, 0) + 1
 
-        # Step 3b: Stream iteration update to frontend
+        # Stream iteration update to frontend
         yield {
             "type": "iteration",
             "iteration": iteration,
@@ -56,7 +66,7 @@ async def run_loop(user_description: str, custom_cases: list = None, existing_pr
             "results": eval_results["results"]
         }
 
-        # Step 3c: Success — hit the threshold
+        # Success
         if pass_rate >= PASS_THRESHOLD:
             yield {
                 "type": "done",
@@ -66,7 +76,7 @@ async def run_loop(user_description: str, custom_cases: list = None, existing_pr
             }
             return
 
-        # Step 3d: Stuck — try regenerating from scratch before giving up
+        # Stuck — regenerate from scratch instead of giving up
         if no_improvement_count >= NO_IMPROVEMENT_LIMIT:
             if fresh_starts < MAX_FRESH_STARTS:
                 fresh_starts += 1
@@ -76,7 +86,7 @@ async def run_loop(user_description: str, custom_cases: list = None, existing_pr
                     "type": "status",
                     "message": f"Stuck at {int(best_pass_rate * 100)}% — regenerating prompt from scratch (attempt {fresh_starts}/{MAX_FRESH_STARTS})"
                 }
-                current_prompt = generate_prompt(user_description, context_files)
+                current_prompt = await generate_prompt_async(user_description, context_files)
                 continue
             else:
                 yield {
@@ -87,16 +97,14 @@ async def run_loop(user_description: str, custom_cases: list = None, existing_pr
                 }
                 return
 
-        # Step 3e: Build rich failure report for the refiner
+        # Build failure report
         failed_results = [r for r in eval_results["results"] if not r["passed"]]
 
-        # Group failures by category
         by_category = {}
         for r in failed_results:
             cat = r.get("category", "normal")
             by_category.setdefault(cat, []).append(r)
 
-        # Find tests that have failed repeatedly (3+ times)
         chronic_failures = [
             inp for inp, count in persistent_failures.items()
             if count >= 3
@@ -106,21 +114,18 @@ async def run_loop(user_description: str, custom_cases: list = None, existing_pr
         failure_report += f"Score: {eval_results['passed']}/{eval_results['total']} passed ({int(pass_rate * 100)}%)\n"
         failure_report += f"Trend: {'improving' if no_improvement_count == 0 else f'no improvement for {no_improvement_count} round(s)'}\n\n"
 
-        # Highlight chronic failures
         if chronic_failures:
             failure_report += "CHRONIC FAILURES (failed 3+ times — highest priority to fix):\n"
             for inp in chronic_failures:
                 failure_report += f"  - \"{inp}\"\n"
             failure_report += "\n"
 
-        # Category breakdown
         if by_category:
             failure_report += "FAILURES BY CATEGORY:\n"
             for cat, failures in by_category.items():
                 failure_report += f"  - {cat.upper()}: {len(failures)} failed\n"
             failure_report += "\n"
 
-        # Detailed failures — include the actual AI response so refiner can see what went wrong
         failure_report += "DETAILED FAILURES:\n\n"
         for result in failed_results:
             failure_report += f"[{result.get('category', 'normal').upper()}]\n"
@@ -139,9 +144,10 @@ async def run_loop(user_description: str, custom_cases: list = None, existing_pr
 
             failure_report += f"\nWhy it failed: {result['reason']}\n\n"
 
-        current_prompt = refine_prompt(current_prompt, failure_report)
+        # Refine with Flash (faster, sufficient for surgical fixes)
+        current_prompt = await refine_prompt_async(current_prompt, failure_report)
 
-    # Step 4: Reached max iterations
+    # Reached max iterations
     yield {
         "type": "done",
         "status": "max_iterations",

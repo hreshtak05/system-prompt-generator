@@ -1,3 +1,4 @@
+import asyncio
 import google.generativeai as genai
 import os
 import json
@@ -18,16 +19,18 @@ def parse_json_from_response(text: str):
 def build_context_section(context_files: list) -> str:
     if not context_files:
         return ""
-    section = "\n\nCONTEXT FILES (the AI works with these — generate test cases based on their actual content):\n"
+    section = "\n\nCONTEXT FILES (use actual content from these to write specific, realistic test inputs):\n"
     for f in context_files:
         section += f"\n--- {f.get('filename', 'file')} ({f.get('type', 'text')}) ---\n"
-        section += f.get("content", "")[:3000]
+        # Use shorter context for eval gen — 500 chars is enough to get specific details
+        section += f.get("content", "")[:500]
         section += "\n"
     return section
 
 
-def generate_eval_cases(user_description: str, custom_cases: list = None, context_files: list = None) -> list:
-    model = genai.GenerativeModel("gemini-2.5-pro")
+async def generate_eval_cases_async(user_description: str, custom_cases: list = None, context_files: list = None) -> list:
+    # Use Flash for eval generation — 3-4x faster, quality is fine for test cases
+    model = genai.GenerativeModel("gemini-2.5-flash")
     context_section = build_context_section(context_files)
 
     prompt = f"""You are a world-class QA engineer specializing in testing AI assistants. Your job is to write test cases that will expose weaknesses in a system prompt.
@@ -72,10 +75,9 @@ Return a valid JSON array only. No markdown, no extra text:
   ...all 30 cases...
 ]"""
 
-    response = model.generate_content(prompt)
+    response = await model.generate_content_async(prompt)
     cases = parse_json_from_response(response.text)
 
-    # Ensure category field exists
     for case in cases:
         if "category" not in case:
             case["category"] = "normal"
@@ -87,3 +89,10 @@ Return a valid JSON array only. No markdown, no extra text:
         cases.extend(custom_cases)
 
     return cases
+
+
+# Sync wrapper kept for any direct callers
+def generate_eval_cases(user_description: str, custom_cases: list = None, context_files: list = None) -> list:
+    return asyncio.get_event_loop().run_until_complete(
+        generate_eval_cases_async(user_description, custom_cases, context_files)
+    )

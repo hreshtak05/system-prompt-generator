@@ -1,3 +1,4 @@
+import asyncio
 import google.generativeai as genai
 import os
 from dotenv import load_dotenv
@@ -17,14 +18,7 @@ def build_context_section(context_files: list, max_chars: int = 2000) -> str:
     return section
 
 
-def generate_prompt(user_description: str, context_files: list = None) -> str:
-    model = genai.GenerativeModel("gemini-2.5-pro")
-    context_section = build_context_section(context_files)
-
-    prompt = f"""You are a world-class AI prompt engineer. Your system prompts are used in production AI assistants that handle thousands of real conversations daily.
-
-THE AI ASSISTANT MUST DO THIS:
-{user_description}{context_section}
+GENERATE_INSTRUCTIONS = """You are a world-class AI prompt engineer. Your system prompts are used in production AI assistants that handle thousands of real conversations daily.
 
 ━━━ STEP 1 — ANALYSIS (do this silently before writing) ━━━
 
@@ -72,12 +66,23 @@ If any checkbox fails — fix it before returning.
 Return ONLY the final system prompt text.
 No analysis. No section headers like "ROLE:" or "LIMITS:". No meta-commentary. Just the prompt itself, written as direct instructions to the AI."""
 
-    response = model.generate_content(prompt)
+
+async def generate_prompt_async(user_description: str, context_files: list = None) -> str:
+    model = genai.GenerativeModel("gemini-2.5-pro")
+    context_section = build_context_section(context_files)
+
+    prompt = f"""{GENERATE_INSTRUCTIONS}
+
+THE AI ASSISTANT MUST DO THIS:
+{user_description}{context_section}"""
+
+    response = await model.generate_content_async(prompt)
     return response.text.strip()
 
 
-def refine_prompt(current_prompt: str, failure_report: str) -> str:
-    model = genai.GenerativeModel("gemini-2.5-pro")
+async def refine_prompt_async(current_prompt: str, failure_report: str) -> str:
+    # Use Flash for refinement — it's 3-4x faster and surgical fixes don't need Pro
+    model = genai.GenerativeModel("gemini-2.5-flash")
 
     prompt = f"""You are a world-class AI prompt engineer doing surgical refinement. A system prompt was tested and specific cases failed. Your job is to fix only what's broken — leave everything else exactly as it is.
 
@@ -134,5 +139,18 @@ After making fixes, verify:
 Return ONLY the improved system prompt text.
 No analysis. No commentary. No section headers. Just the prompt."""
 
-    response = model.generate_content(prompt)
+    response = await model.generate_content_async(prompt)
     return response.text.strip()
+
+
+# Sync wrappers kept for any direct callers
+def generate_prompt(user_description: str, context_files: list = None) -> str:
+    return asyncio.get_event_loop().run_until_complete(
+        generate_prompt_async(user_description, context_files)
+    )
+
+
+def refine_prompt(current_prompt: str, failure_report: str) -> str:
+    return asyncio.get_event_loop().run_until_complete(
+        refine_prompt_async(current_prompt, failure_report)
+    )
