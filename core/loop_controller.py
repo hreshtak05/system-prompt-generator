@@ -3,7 +3,7 @@ from core.prompt_generator import generate_prompt_async, refine_prompt_async
 from core.eval_generator import generate_eval_cases_async
 from core.eval_runner import run_evals
 
-MAX_ITERATIONS = 50
+MAX_ITERATIONS = 20
 PASS_THRESHOLD = 0.95
 NO_IMPROVEMENT_LIMIT = 7
 MAX_FRESH_STARTS = 2
