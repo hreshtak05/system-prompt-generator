@@ -140,7 +140,7 @@ async def generate(request: GenerateRequest):
         ):
             yield {"data": json.dumps(update)}
 
-    return EventSourceResponse(event_stream())
+    return EventSourceResponse(event_stream(), ping=15)
 
 
 if __name__ == "__main__":
