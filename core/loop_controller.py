@@ -18,15 +18,18 @@ async def run_loop(user_description: str, custom_cases: list = None, existing_pr
     # (saves ~15s vs running them sequentially)
     if existing_prompt and existing_prompt.strip():
         # Existing prompt provided — only need to generate eval cases
-        yield {"type": "status", "message": "Generating 30 test cases..."}
-        eval_cases = await generate_eval_cases_async(user_description, custom_cases, context_files)
+        yield {"type": "status", "message": "Generating 15 test cases..."}
+        eval_cases = await asyncio.wait_for(
+            generate_eval_cases_async(user_description, custom_cases, context_files),
+            timeout=180.0
+        )
         current_prompt = existing_prompt.strip()
     else:
-        # Need both — run them at the same time
+        # Need both — run them at the same time, 3-minute timeout each
         yield {"type": "status", "message": "Generating test cases and system prompt in parallel..."}
         eval_cases, current_prompt = await asyncio.gather(
-            generate_eval_cases_async(user_description, custom_cases, context_files),
-            generate_prompt_async(user_description, context_files)
+            asyncio.wait_for(generate_eval_cases_async(user_description, custom_cases, context_files), timeout=180.0),
+            asyncio.wait_for(generate_prompt_async(user_description, context_files), timeout=300.0)
         )
 
     yield {"type": "status", "message": "Ready — running first evaluation round..."}
@@ -86,7 +89,10 @@ async def run_loop(user_description: str, custom_cases: list = None, existing_pr
                     "type": "status",
                     "message": f"Stuck at {int(best_pass_rate * 100)}% — regenerating prompt from scratch (attempt {fresh_starts}/{MAX_FRESH_STARTS})"
                 }
-                current_prompt = await generate_prompt_async(user_description, context_files)
+                current_prompt = await asyncio.wait_for(
+                    generate_prompt_async(user_description, context_files),
+                    timeout=300.0
+                )
                 continue
             else:
                 yield {
@@ -144,8 +150,15 @@ async def run_loop(user_description: str, custom_cases: list = None, existing_pr
 
             failure_report += f"\nWhy it failed: {result['reason']}\n\n"
 
-        # Refine with Flash (faster, sufficient for surgical fixes)
-        current_prompt = await refine_prompt_async(current_prompt, failure_report)
+        # Refine with Flash — hard 3-minute timeout so a hung API call never freezes the loop
+        try:
+            current_prompt = await asyncio.wait_for(
+                refine_prompt_async(current_prompt, failure_report),
+                timeout=180.0
+            )
+        except asyncio.TimeoutError:
+            yield {"type": "status", "message": f"Refinement timed out on round {iteration} — retrying with best prompt so far"}
+            current_prompt = best_prompt
 
     # Reached max iterations
     yield {
