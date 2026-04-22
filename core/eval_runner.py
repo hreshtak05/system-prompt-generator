@@ -9,7 +9,7 @@ load_dotenv()
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 PASS_SCORE = 7        # Score out of 10 required to pass
-MAX_CONCURRENT = 10   # Max parallel API calls — reduced to handle multiple users
+MAX_CONCURRENT = 5    # Max parallel API calls — low to avoid rate limit bursts
 MAX_RETRIES = 3       # Retry on rate limit errors
 
 
