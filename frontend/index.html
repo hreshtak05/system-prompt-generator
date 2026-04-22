@@ -508,6 +508,7 @@
       <div class="mode-toggle">
         <button class="mode-btn active" id="mode-generate" onclick="setMode('generate')">✨ Generate new prompt</button>
         <button class="mode-btn" id="mode-improve" onclick="setMode('improve')">🔧 Improve existing prompt</button>
+        <button class="mode-btn" id="mode-test" onclick="setMode('test')">🧪 Test then improve</button>
       </div>
 
       <h2>What should your AI assistant do?</h2>
@@ -703,8 +704,11 @@
       currentMode = mode;
       document.getElementById('mode-generate').classList.toggle('active', mode === 'generate');
       document.getElementById('mode-improve').classList.toggle('active', mode === 'improve');
-      document.getElementById('existing-prompt-section').style.display = mode === 'improve' ? 'block' : 'none';
-      document.getElementById('generate-btn').textContent = mode === 'improve' ? '🔧 Improve System Prompt' : '✨ Generate System Prompt';
+      document.getElementById('mode-test').classList.toggle('active', mode === 'test');
+      const needsPrompt = mode === 'improve' || mode === 'test';
+      document.getElementById('existing-prompt-section').style.display = needsPrompt ? 'block' : 'none';
+      const btnLabels = { generate: '✨ Generate System Prompt', improve: '🔧 Improve System Prompt', test: '🧪 Test System Prompt' };
+      document.getElementById('generate-btn').textContent = btnLabels[mode] || '✨ Generate System Prompt';
     }
 
     function addCustomCase() {
@@ -759,8 +763,8 @@
       const custom_cases = getCustomCases();
       const existing_prompt = document.getElementById('existing-prompt').value.trim();
 
-      // Validate: if improve mode, existing prompt must be filled
-      if (currentMode === 'improve' && !existing_prompt) {
+      // Validate: if improve or test mode, existing prompt must be filled
+      if ((currentMode === 'improve' || currentMode === 'test') && !existing_prompt) {
         alert('Please paste your existing system prompt.');
         return;
       }
@@ -772,6 +776,8 @@
       document.getElementById('results-body').innerHTML = '';
       const startMsg = currentMode === 'improve'
         ? '<span class="spinner"></span>Evaluating your prompt and generating test cases…'
+        : currentMode === 'test'
+        ? '<span class="spinner"></span>Generating test cases…'
         : '<span class="spinner"></span>Generating test cases and initial prompt…';
       document.getElementById('iteration-label').innerHTML = startMsg;
       document.getElementById('pass-rate-badge').textContent = '0%';
@@ -780,12 +786,14 @@
       const payload = {
         description,
         custom_cases,
-        existing_prompt: currentMode === 'improve' ? existing_prompt : '',
+        existing_prompt: (currentMode === 'improve' || currentMode === 'test') ? existing_prompt : '',
         context_files: contextFiles.filter(f => f.content).map(f => ({ filename: f.filename, content: f.content, type: f.type }))
       };
 
+      const endpoint = currentMode === 'test' ? '/test' : '/generate';
+
       try {
-        const response = await fetch('/generate', {
+        const response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -826,9 +834,45 @@
         updateProgress(data);
       } else if (data.type === 'done') {
         showFinalResult(data);
+      } else if (data.type === 'test_done') {
+        showTestResult(data);
       } else if (data.type === 'status') {
         showStatusBanner(data.message);
       }
+    }
+
+    function showTestResult(data) {
+      const pct = Math.round(data.pass_rate * 100);
+      const passed = data.passed;
+      const total = data.total;
+
+      document.getElementById('iteration-label').textContent = `Test complete — ${passed}/${total} passed (${pct}%)`;
+      document.getElementById('progress-bar').style.width = `${pct}%`;
+
+      const banner = document.getElementById('result-banner');
+      if (!data.needs_improvement) {
+        banner.className = 'result-banner banner-success';
+        banner.innerHTML = `✅ Your prompt passes all tests — scored ${pct}%! No improvement needed.`;
+      } else {
+        banner.className = 'result-banner banner-warning';
+        banner.innerHTML = `
+          ⚠️ Scored ${pct}% — ${total - passed} test case${total - passed !== 1 ? 's' : ''} failed.
+          <br><br>
+          <button onclick="startImprovingFromTest()" style="background:#7c3aed;color:#fff;border:none;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin-top:4px;">
+            🔧 Start Improvement Loop →
+          </button>
+        `;
+      }
+
+      document.getElementById('final-prompt').value = data.prompt;
+      document.getElementById('result-panel').style.display = 'block';
+      document.getElementById('generate-btn').disabled = false;
+    }
+
+    function startImprovingFromTest() {
+      // Switch to improve mode and re-run with the same prompt
+      setMode('improve');
+      startGeneration();
     }
 
     function showStatusBanner(message) {

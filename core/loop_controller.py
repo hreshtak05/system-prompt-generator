@@ -167,3 +167,40 @@ async def run_loop(user_description: str, custom_cases: list = None, existing_pr
         "prompt": best_prompt,
         "pass_rate": best_pass_rate
     }
+
+
+async def run_test(user_description: str, existing_prompt: str, custom_cases: list = None, context_files: list = None):
+    """Run evals exactly once on an existing prompt — no loop, no refinement.
+    Shows what passes and what fails, then signals whether improvement is needed."""
+
+    yield {"type": "status", "message": "Generating test cases..."}
+
+    eval_cases = await asyncio.wait_for(
+        generate_eval_cases_async(user_description, custom_cases, context_files),
+        timeout=180.0
+    )
+
+    yield {"type": "status", "message": f"Running {len(eval_cases)} test cases against your prompt..."}
+
+    eval_results = await run_evals(existing_prompt, eval_cases)
+    pass_rate = eval_results["pass_rate"]
+
+    # Stream the test results exactly like a normal iteration
+    yield {
+        "type": "iteration",
+        "iteration": 1,
+        "max_iterations": 1,
+        "pass_rate": pass_rate,
+        "results": eval_results["results"]
+    }
+
+    # Done — tell frontend whether improvement is needed
+    needs_improvement = pass_rate < PASS_THRESHOLD
+    yield {
+        "type": "test_done",
+        "pass_rate": pass_rate,
+        "passed": eval_results["passed"],
+        "total": eval_results["total"],
+        "needs_improvement": needs_improvement,
+        "prompt": existing_prompt
+    }

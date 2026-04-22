@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 from dotenv import load_dotenv
-from core.loop_controller import run_loop
+from core.loop_controller import run_loop, run_test
 
 load_dotenv()
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
@@ -136,6 +136,23 @@ async def generate(request: GenerateRequest):
             request.description,
             request.custom_cases or None,
             request.existing_prompt or None,
+            request.context_files or None
+        ):
+            yield {"data": json.dumps(update)}
+
+    return EventSourceResponse(event_stream(), ping=15)
+
+
+@app.post("/test")
+async def test_prompt(request: GenerateRequest):
+    async def event_stream():
+        if not request.existing_prompt or not request.existing_prompt.strip():
+            yield {"data": json.dumps({"type": "error", "message": "No prompt provided to test."})}
+            return
+        async for update in run_test(
+            request.description,
+            request.existing_prompt.strip(),
+            request.custom_cases or None,
             request.context_files or None
         ):
             yield {"data": json.dumps(update)}
