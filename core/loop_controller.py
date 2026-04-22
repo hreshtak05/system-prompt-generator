@@ -171,9 +171,23 @@ async def run_loop(user_description: str, custom_cases: list = None, existing_pr
 
 async def run_test(user_description: str, existing_prompt: str, custom_cases: list = None, context_files: list = None):
     """Run evals exactly once on an existing prompt — no loop, no refinement.
-    Shows what passes and what fails, then signals whether improvement is needed."""
+    When user_description == existing_prompt (test mode), we derive purpose from the prompt itself."""
 
-    yield {"type": "status", "message": "Generating test cases..."}
+    # If no separate description was given, extract the AI's purpose from the system prompt
+    if user_description.strip() == existing_prompt.strip() or not user_description.strip():
+        yield {"type": "status", "message": "Reading your system prompt to understand what it does..."}
+        from core.prompt_generator import generate_prompt_async
+        import google.generativeai as genai
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        extract_response = await asyncio.wait_for(
+            model.generate_content_async(
+                f"Read this system prompt and write 2-3 sentences describing what this AI assistant is supposed to do, who it serves, and what its key rules are. Be specific.\n\nSYSTEM PROMPT:\n{existing_prompt[:3000]}"
+            ),
+            timeout=60.0
+        )
+        user_description = extract_response.text.strip()
+
+    yield {"type": "status", "message": "Generating test cases from your prompt and files..."}
 
     eval_cases = await asyncio.wait_for(
         generate_eval_cases_async(user_description, custom_cases, context_files),

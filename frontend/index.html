@@ -511,20 +511,22 @@
         <button class="mode-btn" id="mode-test" onclick="setMode('test')">🧪 Test then improve</button>
       </div>
 
-      <h2>What should your AI assistant do?</h2>
-      <label for="description">Describe your AI assistant</label>
-      <textarea id="description"
-        placeholder="Example: I want an AI assistant that helps online store customers track their orders. It should be friendly, answer in short paragraphs, and never discuss competitor brands."></textarea>
+      <div id="description-section">
+        <h2>What should your AI assistant do?</h2>
+        <label for="description" id="description-label">Describe your AI assistant</label>
+        <textarea id="description"
+          placeholder="Example: I want an AI assistant that helps online store customers track their orders. It should be friendly, answer in short paragraphs, and never discuss competitor brands."></textarea>
+      </div>
 
-      <!-- Existing prompt section (shown in improve mode) -->
+      <!-- Existing prompt section (shown in improve/test mode) -->
       <div id="existing-prompt-section">
         <hr class="section-divider" />
-        <h2>Your existing system prompt</h2>
+        <h2 id="existing-prompt-title">Your existing system prompt</h2>
         <button class="upload-btn" onclick="document.getElementById('prompt-file-input').click()">📎 Upload from file (.txt, .md, .pdf)</button>
         <input type="file" id="prompt-file-input" accept=".txt,.md,.pdf" style="display:none" onchange="handlePromptFileUpload(this.files[0])" />
-        <label for="existing-prompt">Or paste your current system prompt here</label>
+        <label for="existing-prompt" id="existing-prompt-label">Or paste your current system prompt here</label>
         <textarea id="existing-prompt"
-          placeholder="Paste your existing system prompt here — the AI will evaluate it and improve it until it scores 99%+…"></textarea>
+          placeholder="Paste your existing system prompt here…"></textarea>
       </div>
 
       <hr class="section-divider" />
@@ -705,8 +707,23 @@
       document.getElementById('mode-generate').classList.toggle('active', mode === 'generate');
       document.getElementById('mode-improve').classList.toggle('active', mode === 'improve');
       document.getElementById('mode-test').classList.toggle('active', mode === 'test');
+
       const needsPrompt = mode === 'improve' || mode === 'test';
       document.getElementById('existing-prompt-section').style.display = needsPrompt ? 'block' : 'none';
+
+      // In test mode: description is optional (tests are generated from the system prompt + files)
+      if (mode === 'test') {
+        document.getElementById('description-section').style.display = 'none';
+        document.getElementById('existing-prompt-title').textContent = 'Your system prompt';
+        document.getElementById('existing-prompt-label').textContent = 'Paste the system prompt you want to test';
+        document.getElementById('existing-prompt').placeholder = 'Paste your system prompt here — test cases will be generated automatically based on what it does and the files you upload.';
+      } else {
+        document.getElementById('description-section').style.display = 'block';
+        document.getElementById('existing-prompt-title').textContent = 'Your existing system prompt';
+        document.getElementById('existing-prompt-label').textContent = 'Or paste your current system prompt here';
+        document.getElementById('existing-prompt').placeholder = 'Paste your existing system prompt here…';
+      }
+
       const btnLabels = { generate: '✨ Generate System Prompt', improve: '🔧 Improve System Prompt', test: '🧪 Test System Prompt' };
       document.getElementById('generate-btn').textContent = btnLabels[mode] || '✨ Generate System Prompt';
     }
@@ -754,17 +771,21 @@
     }
 
     async function startGeneration() {
-      const description = document.getElementById('description').value.trim();
-      if (!description) {
-        alert('Please describe what you want your AI assistant to do.');
-        return;
+      const existing_prompt = document.getElementById('existing-prompt').value.trim();
+
+      // In test mode: description is derived from the system prompt itself
+      let description = document.getElementById('description').value.trim();
+      if (currentMode === 'test') {
+        if (!existing_prompt) { alert('Please paste the system prompt you want to test.'); return; }
+        description = existing_prompt; // backend will extract purpose from the prompt
+      } else {
+        if (!description) { alert('Please describe what you want your AI assistant to do.'); return; }
       }
 
       const custom_cases = getCustomCases();
-      const existing_prompt = document.getElementById('existing-prompt').value.trim();
 
-      // Validate: if improve or test mode, existing prompt must be filled
-      if ((currentMode === 'improve' || currentMode === 'test') && !existing_prompt) {
+      // Validate: if improve mode, existing prompt must be filled (test mode already checked above)
+      if (currentMode === 'improve' && !existing_prompt) {
         alert('Please paste your existing system prompt.');
         return;
       }
@@ -870,7 +891,12 @@
     }
 
     function startImprovingFromTest() {
-      // Switch to improve mode and re-run with the same prompt
+      // Switch to improve mode — populate description from the prompt if empty
+      const prompt = document.getElementById('existing-prompt').value.trim();
+      const desc = document.getElementById('description');
+      if (!desc.value.trim() && prompt) {
+        desc.value = 'Improve this existing system prompt based on the test failures.';
+      }
       setMode('improve');
       startGeneration();
     }
