@@ -160,6 +160,51 @@ async def test_prompt(request: GenerateRequest):
     return EventSourceResponse(event_stream(), ping=15)
 
 
+class RunRequest(BaseModel):
+    system_prompt: str
+    user_message: str = ""
+    files: list = []  # [{filename, mime_type, data (base64) or content (text)}]
+
+
+@app.post("/run")
+async def run_prompt(request: RunRequest):
+    """Run a system prompt directly against uploaded files and return the AI response."""
+    if not request.system_prompt.strip():
+        return {"error": "No system prompt provided."}
+
+    model = genai.GenerativeModel(
+        model_name="gemini-2.5-flash",
+        system_instruction=request.system_prompt.strip()
+    )
+
+    # Build content parts — images as inline data, text files as text
+    parts = []
+    for f in request.files:
+        if f.get("data"):  # base64 image/PDF
+            parts.append({
+                "inline_data": {
+                    "mime_type": f.get("mime_type", "image/jpeg"),
+                    "data": f["data"]
+                }
+            })
+        elif f.get("content"):  # plain text
+            parts.append(f"[File: {f.get('filename', 'file')}]\n{f['content']}")
+
+    # Add user message or default instruction
+    if request.user_message.strip():
+        parts.append(request.user_message.strip())
+    elif not parts:
+        return {"error": "Please upload at least one file or type a message."}
+    else:
+        parts.append("Please process the content above according to your instructions.")
+
+    try:
+        response = await model.generate_content_async(parts)
+        return {"response": response.text}
+    except Exception as e:
+        return {"error": f"Failed to run prompt: {str(e)}"}
+
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
     uvicorn.run("app:app", host="0.0.0.0", port=port)

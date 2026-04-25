@@ -509,6 +509,38 @@
         <button class="mode-btn active" id="mode-generate" onclick="setMode('generate')">✨ Generate new prompt</button>
         <button class="mode-btn" id="mode-improve" onclick="setMode('improve')">🔧 Improve existing prompt</button>
         <button class="mode-btn" id="mode-test" onclick="setMode('test')">🧪 Test then improve</button>
+        <button class="mode-btn" id="mode-run" onclick="setMode('run')">▶ Run prompt</button>
+      </div>
+
+      <!-- RUN MODE UI (hidden unless run mode active) -->
+      <div id="run-section" style="display:none;">
+        <h2>System prompt</h2>
+        <button class="upload-btn" onclick="document.getElementById('run-prompt-file-input').click()">📎 Upload from file (.txt, .md)</button>
+        <input type="file" id="run-prompt-file-input" accept=".txt,.md" style="display:none" onchange="handleRunPromptFile(this.files[0])" />
+        <textarea id="run-system-prompt" style="margin-top:0.5rem;" placeholder="Paste your system prompt here — e.g. 'You are a homework checker. Review the uploaded work and give a grade with feedback.'"></textarea>
+
+        <hr class="section-divider" />
+        <h2>Files to process</h2>
+        <p style="font-size:0.82rem;color:#64748b;margin-bottom:0.75rem;">Upload the content your system prompt should work on — homework images, documents, etc.</p>
+        <div class="drop-zone" id="run-drop-zone"
+          onclick="document.getElementById('run-file-input').click()"
+          ondragover="handleDragOver(event)"
+          ondragleave="handleDragLeave(event)"
+          ondrop="handleRunDrop(event)">
+          <p>📁 Drag & drop files here or <strong style="color:#a5b4fc">click to upload</strong></p>
+          <p class="hint">Images (PNG/JPG/WebP), PDF, text files — max 20MB each</p>
+        </div>
+        <input type="file" id="run-file-input" multiple
+          accept=".txt,.md,.png,.jpg,.jpeg,.gif,.webp,.pdf"
+          style="display:none" onchange="handleRunFiles(this.files)" />
+        <div class="file-chips" id="run-file-chips"></div>
+
+        <hr class="section-divider" />
+        <h2>Message <span style="font-weight:400;color:#64748b;font-size:0.85rem;">(optional)</span></h2>
+        <input type="text" id="run-message" placeholder="e.g. 'Check this homework and give a grade' — or leave blank to use the system prompt's default behaviour" style="width:100%;padding:0.6rem 0.8rem;border-radius:8px;border:1px solid #334155;background:#1e293b;color:#f1f5f9;font-size:0.95rem;box-sizing:border-box;" />
+
+        <hr class="section-divider" />
+        <button class="generate-btn" id="run-btn" onclick="startRun()">▶ Run Prompt</button>
       </div>
 
       <div id="description-section">
@@ -588,6 +620,14 @@
       <label for="final-prompt">Final system prompt</label>
       <textarea id="final-prompt" readonly></textarea>
       <button class="copy-btn" onclick="copyPrompt()">Copy to clipboard</button>
+    </div>
+
+    <!-- Section 4: Run Result -->
+    <div class="card" id="run-result-panel" style="display:none;">
+      <div id="run-result-banner" class="result-banner banner-success" style="margin-bottom:1rem;"></div>
+      <label>AI Response</label>
+      <div id="run-response-output" style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:1.25rem;white-space:pre-wrap;font-size:0.92rem;line-height:1.7;color:#e2e8f0;min-height:120px;"></div>
+      <button class="copy-btn" onclick="copyRunResponse()" style="margin-top:0.75rem;">Copy response</button>
     </div>
   </div>
 
@@ -707,18 +747,34 @@
       document.getElementById('mode-generate').classList.toggle('active', mode === 'generate');
       document.getElementById('mode-improve').classList.toggle('active', mode === 'improve');
       document.getElementById('mode-test').classList.toggle('active', mode === 'test');
+      document.getElementById('mode-run').classList.toggle('active', mode === 'run');
 
-      const needsPrompt = mode === 'improve' || mode === 'test';
-      document.getElementById('existing-prompt-section').style.display = needsPrompt ? 'block' : 'none';
+      const isRun = mode === 'run';
 
-      // In test mode: description is optional (tests are generated from the system prompt + files)
+      // Show/hide run section vs normal sections
+      document.getElementById('run-section').style.display = isRun ? 'block' : 'none';
+      document.getElementById('description-section').style.display = (!isRun && mode !== 'test') ? 'block' : 'none';
+      document.getElementById('existing-prompt-section').style.display = (!isRun && (mode === 'improve' || mode === 'test')) ? 'block' : 'none';
+
+      // Hide context files / custom cases / main button in run mode — run mode has its own
+      const sharedSections = document.querySelectorAll('.section-divider, #context-drop-zone, #context-file-input, #context-file-chips, #custom-cases-container, .add-case-btn');
+      const contextH2s = document.querySelectorAll('#input-section > h2');
+
+      document.getElementById('generate-btn').style.display = isRun ? 'none' : 'block';
+
+      // Run mode: hide sections below run-section
+      const toHide = ['context-drop-zone', 'context-file-chips', 'custom-cases-container'];
+      toHide.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.closest('div') && (el.style.display = isRun ? 'none' : '');
+      });
+
+      // Test mode: description hidden (derived from prompt)
       if (mode === 'test') {
-        document.getElementById('description-section').style.display = 'none';
         document.getElementById('existing-prompt-title').textContent = 'Your system prompt';
         document.getElementById('existing-prompt-label').textContent = 'Paste the system prompt you want to test';
-        document.getElementById('existing-prompt').placeholder = 'Paste your system prompt here — test cases will be generated automatically based on what it does and the files you upload.';
-      } else {
-        document.getElementById('description-section').style.display = 'block';
+        document.getElementById('existing-prompt').placeholder = 'Paste your system prompt here — test cases will be generated automatically.';
+      } else if (!isRun) {
         document.getElementById('existing-prompt-title').textContent = 'Your existing system prompt';
         document.getElementById('existing-prompt-label').textContent = 'Or paste your current system prompt here';
         document.getElementById('existing-prompt').placeholder = 'Paste your existing system prompt here…';
@@ -726,6 +782,9 @@
 
       const btnLabels = { generate: '✨ Generate System Prompt', improve: '🔧 Improve System Prompt', test: '🧪 Test System Prompt' };
       document.getElementById('generate-btn').textContent = btnLabels[mode] || '✨ Generate System Prompt';
+
+      // Hide run result when switching modes
+      document.getElementById('run-result-panel').style.display = 'none';
     }
 
     function addCustomCase() {
@@ -992,6 +1051,132 @@
 
     function escapeHtml(str) {
       return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // ── RUN MODE ──────────────────────────────────────────────────────────────
+
+    let runFiles = []; // [{filename, mime_type, data (base64) or content (text)}]
+
+    function handleRunPromptFile(file) {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = e => { document.getElementById('run-system-prompt').value = e.target.result; };
+      reader.readAsText(file);
+    }
+
+    function handleRunDrop(e) {
+      e.preventDefault();
+      document.getElementById('run-drop-zone').classList.remove('drag-over');
+      handleRunFiles(e.dataTransfer.files);
+    }
+
+    function handleRunFiles(files) {
+      for (const file of files) {
+        addRunFile(file);
+      }
+    }
+
+    function addRunFile(file) {
+      const id = Date.now() + Math.random();
+      const isImage = file.type.startsWith('image/');
+      const isText = file.type.startsWith('text/') || file.name.endsWith('.txt') || file.name.endsWith('.md');
+
+      // Add chip
+      const chips = document.getElementById('run-file-chips');
+      const chip = document.createElement('div');
+      chip.className = 'file-chip loading';
+      chip.id = `run-chip-${id}`;
+      chip.innerHTML = `<span class="chip-icon">⏳</span><span>${file.name}</span><button onclick="removeRunFile('${id}')">×</button>`;
+      chips.appendChild(chip);
+
+      const reader = new FileReader();
+
+      if (isImage) {
+        reader.onload = e => {
+          const base64 = e.target.result.split(',')[1];
+          runFiles.push({ id, filename: file.name, mime_type: file.type, data: base64 });
+          chip.className = 'file-chip ready';
+          chip.querySelector('.chip-icon').textContent = '✅';
+        };
+        reader.readAsDataURL(file);
+      } else if (isText) {
+        reader.onload = e => {
+          runFiles.push({ id, filename: file.name, content: e.target.result });
+          chip.className = 'file-chip ready';
+          chip.querySelector('.chip-icon').textContent = '✅';
+        };
+        reader.readAsText(file);
+      } else {
+        // For PDFs and other formats, upload via server
+        chip.querySelector('.chip-icon').textContent = '⏳';
+        const formData = new FormData();
+        formData.append('file', file);
+        fetch('/upload', { method: 'POST', body: formData })
+          .then(r => r.json())
+          .then(data => {
+            if (data.error) { chip.className = 'file-chip error'; chip.querySelector('.chip-icon').textContent = '❌'; return; }
+            runFiles.push({ id, filename: file.name, content: data.content });
+            chip.className = 'file-chip ready';
+            chip.querySelector('.chip-icon').textContent = '✅';
+          })
+          .catch(() => { chip.className = 'file-chip error'; chip.querySelector('.chip-icon').textContent = '❌'; });
+      }
+    }
+
+    function removeRunFile(id) {
+      runFiles = runFiles.filter(f => String(f.id) !== String(id));
+      const chip = document.getElementById(`run-chip-${id}`);
+      if (chip) chip.remove();
+    }
+
+    async function startRun() {
+      const systemPrompt = document.getElementById('run-system-prompt').value.trim();
+      const userMessage = document.getElementById('run-message').value.trim();
+
+      if (!systemPrompt) { alert('Please paste your system prompt.'); return; }
+      if (runFiles.length === 0 && !userMessage) { alert('Please upload at least one file or type a message.'); return; }
+
+      const btn = document.getElementById('run-btn');
+      btn.disabled = true;
+      btn.textContent = '⏳ Running…';
+      document.getElementById('run-result-panel').style.display = 'none';
+
+      try {
+        const res = await fetch('/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ system_prompt: systemPrompt, user_message: userMessage, files: runFiles })
+        });
+        const data = await res.json();
+
+        document.getElementById('run-result-panel').style.display = 'block';
+        if (data.error) {
+          document.getElementById('run-result-banner').textContent = '❌ Error: ' + data.error;
+          document.getElementById('run-result-banner').className = 'result-banner banner-warning';
+          document.getElementById('run-response-output').textContent = '';
+        } else {
+          document.getElementById('run-result-banner').textContent = '✅ Done — your system prompt processed the files';
+          document.getElementById('run-result-banner').className = 'result-banner banner-success';
+          document.getElementById('run-response-output').textContent = data.response;
+        }
+      } catch (err) {
+        document.getElementById('run-result-panel').style.display = 'block';
+        document.getElementById('run-result-banner').textContent = '❌ Network error: ' + err.message;
+        document.getElementById('run-result-banner').className = 'result-banner banner-warning';
+      }
+
+      btn.disabled = false;
+      btn.textContent = '▶ Run Prompt';
+    }
+
+    function copyRunResponse() {
+      const text = document.getElementById('run-response-output').textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = document.querySelector('#run-result-panel .copy-btn');
+        const orig = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(() => btn.textContent = orig, 2000);
+      });
     }
   </script>
 </body>
