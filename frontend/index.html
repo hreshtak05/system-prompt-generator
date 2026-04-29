@@ -950,12 +950,22 @@
     }
 
     function startImprovingFromTest() {
-      // Switch to improve mode — populate description from the prompt if empty
       const prompt = document.getElementById('existing-prompt').value.trim();
       const desc = document.getElementById('description');
-      if (!desc.value.trim() && prompt) {
-        desc.value = 'Improve this existing system prompt based on the test failures.';
+
+      // Ask user what this AI is supposed to do — critical for correct improvement
+      if (!desc.value.trim()) {
+        const userDesc = window.prompt(
+          'What is this AI assistant supposed to do?\n\nDescribe its purpose so the improvement loop builds the right prompt.\n\nExample: "A customer support assistant for an online clothing store"',
+          ''
+        );
+        if (!userDesc || !userDesc.trim()) {
+          alert('A description is required so the improvement loop knows what to fix.');
+          return;
+        }
+        desc.value = userDesc.trim();
       }
+
       setMode('improve');
       startGeneration();
     }
