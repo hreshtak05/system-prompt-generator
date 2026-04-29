@@ -993,7 +993,7 @@
         const catHtml = `<span class="category-badge cat-${cat}">${cat}</span>`;
 
         const breakdown = r.scores
-          ? `<div class="score-breakdown">instr: ${r.scores.instruction_following} · criteria: ${r.scores.criteria_met} · quality: ${r.scores.quality}</div>`
+          ? `<div class="score-breakdown">coverage: ${r.scores.prompt_coverage ?? '—'} · instr: ${r.scores.instruction_following} · criteria: ${r.scores.criteria_met} · quality: ${r.scores.quality}</div>`
           : '';
 
         const tr = document.createElement('tr');
